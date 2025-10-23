@@ -1,28 +1,48 @@
-# Nostr SDK for Node.js
+# easy-nostr-client
 
-A lightweight toolkit that enables server-side business logic to be exposed through the Nostr protocol using encrypted direct messages (NIP-04). The package ships both a backend listener (`NostrSdk`) and a client helper (`NostrClient`), plus a collection of cryptographic utilities re-exported from `nostr-tools`.
+`easy-nostr-client` is a Nostr JSON-RPC toolkit that works in browsers and Node.js alike. It ships with:
+- `NostrSdk`: a backend listener that consumes kind-4 events and executes business handlers
+- `NostrClient`: a thin client wrapper that issues JSON-RPC requests and awaits replies
+- Utility exports such as `keyUtils`, `nip04`, and `nip19` for NIP-19 key conversion, encryption, and event signing
 
 # Features
-- **Persistent relay connections** powered by `SimplePool` with automatic ping/reconnect.
-- **End-to-end encryption** using NIP-04 for every request/response pair.
-- **JSON-RPC style payloads** (`{ method, params, id }`).
-- **Method registry** on the server for easy business-logic wiring.
-- **Strict filtering** (`kinds`, `authors`, `#p`) to accept only relevant events.
-- **Utility exports** (nip04, nip19, key helpers, encoding helpers) for custom workflows.
+- **ESM & CJS builds** via Vite library mode, producing `dist/index.mjs` and `dist/index.cjs`
+- **Persistent relay pool** powered by `SimplePool` with automatic ping/reconnect
+- **NIP-04 encryption** for every request/response pair
+- **JSON-RPC payloads** using the familiar `{ method, params, id }` shape
+- **Method registry** through `NostrSdk.registerMethod()` for quick business wiring
+- **Strict filtering** (`kinds`, `authors`, `#p`) to process only the intended events
+- **Utility re-exports** (`nip04`, `nip19`, `keyUtils`, etc.) ready for custom workflows
 
 # Installation
 
 ```bash
-npm install nostr-dev
+npm install easy-nostr-client
 # or
-yarn add nostr-dev
+yarn add easy-nostr-client
 ```
 
 If you are working from source, clone the repo and run `npm install` in the root.
 
+# Build from source
+
+```bash
+npm install
+npm run build
+# or with Yarn
+yarn
+yarn build
+```
+
+Build artifacts are emitted to `dist/`:
+- `dist/index.mjs` (ES Module)
+- `dist/index.cjs` (CommonJS)
+
+Run `npm publish --dry-run` before releasing to verify the package contents.
+
 # Exports
 
-`index.js` re-exports the following symbols:
+`index.js` (and the compiled `dist/index.*`) exports the following:
 
 - **Core classes**: `NostrClient`, `NostrSdk`
 - **Pools**: `SimplePool`, `useWebSocketImplementation`
@@ -30,27 +50,36 @@ If you are working from source, clone the repo and run `npm install` in the root
 - **Key utilities**: `generateSecretKey`, `getPublicKey`
 - **Event helpers**: `finalizeEvent`, `verifyEvent`
 - **Encoding helpers**: `bytesToHex`, `hexToBytes`
+- **keyUtils**: helpers such as `normalizeSecretKey`, `encodeSecretToNsec`, and `encodePubkeyToNpub`
 
 Example import:
 
 ```javascript
-const {
+import {
   NostrSdk,
   NostrClient,
   nip04,
   generateSecretKey,
   getPublicKey,
-} = require('nostr-dev');
+} from 'easy-nostr-client';
 ```
 
-When consuming directly from the repository, replace `'nostr-dev'` with `'./index'`.
+CommonJS usage:
+
+```javascript
+const {
+  NostrSdk,
+  NostrClient,
+  keyUtils,
+} = require('easy-nostr-client');
+```
 
 # Quick Start
 
 ## 1. Provision keys
 
 ```javascript
-const { generateSecretKey, getPublicKey, bytesToHex } = require('nostr-dev');
+import { generateSecretKey, getPublicKey, bytesToHex } from 'easy-nostr-client';
 
 const serverSk = generateSecretKey(); // Uint8Array
 const serverPk = getPublicKey(serverSk);
@@ -69,7 +98,7 @@ Store secrets securely (environment variables, secret manager, etc.).
 
 ```javascript
 // server.js
-const { NostrSdk } = require('nostr-dev');
+import { NostrSdk } from 'easy-nostr-client';
 
 const sdk = new NostrSdk({
   relays: ['wss://relay.example.com'],
@@ -98,7 +127,7 @@ process.on('SIGINT', () => {
 
 ```javascript
 // client.js
-const { NostrClient } = require('nostr-dev');
+import { NostrClient } from 'easy-nostr-client';
 
 const client = new NostrClient({
   relays: ['wss://relay.example.com'],
@@ -185,13 +214,16 @@ Methods:
 # Testing
 
 ```bash
-# install dependencies
+# Install dependencies
 npm install
 
-# run integration suite
+# Build the bundle
+npm run build
+
+# Integration test
 node test.js
 
-# optional: keepalive smoke test
+# Quick keepalive smoke test
 node test-keepalive-quick.js
 ```
 
@@ -209,12 +241,13 @@ The integration test covers `getinfo`, `add`, `echo`, and missing-method scenari
 
 ```
 nostr-dev/
-├── index.js            # package entry point
+├── index.js            # ESM entry point (build emits both ESM & CJS)
 ├── src/
 │   ├── nostrSdk.js     # backend listener implementation
 │   └── nostrClient.js  # RPC client helper
 ├── test.js             # integration scenarios
 ├── test-keepalive*.js  # long-running connection tests
+├── vite.config.js      # Vite library build config
 ├── package.json
 └── README.md
 ```
