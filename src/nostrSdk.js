@@ -2,6 +2,7 @@ const { finalizeEvent } = require('nostr-tools/pure');
 const nip04 = require('nostr-tools/nip04');
 const { SimplePool } = require('nostr-tools/pool');
 const { EventEmitter } = require('events');
+const keyUtils = require('./keyUtils');
 
 /**
  * Nostr SDK - Backend server
@@ -12,10 +13,14 @@ class NostrSdk extends EventEmitter {
     super();
     this.relayUrls = options.relays || ['wss://dev-relay.lnfi.network'];
     this.pool = new SimplePool({ enablePing: true, enableReconnect: true });
-    this.privateKey = options.privateKey;
-    this.publicKey = options.publicKey;
+    this.privateKey = options.privateKey
+      ? keyUtils.normalizeSecretKey(options.privateKey)
+      : undefined;
+    this.publicKey = options.publicKey
+      ? keyUtils.publicToHex(options.publicKey)
+      : undefined;
     this.authorWhitelist = Array.isArray(options.allowedAuthors)
-      ? options.allowedAuthors
+      ? options.allowedAuthors.map(keyUtils.publicToHex)
       : [];
     this.methodRegistry = new Map();
     this.isListening = false;

@@ -1,5 +1,6 @@
 const NostrClient = require('./src/nostrClient');
 const NostrSdk = require('./src/nostrSdk');
+const keyUtils = require('./src/keyUtils');
 
 const nip04 = require('nostr-tools/nip04');
 const nip19 = require('nostr-tools/nip19');
@@ -20,4 +21,5 @@ module.exports = {
   getPublicKey,
   bytesToHex,
   hexToBytes,
+  keyUtils,
 };

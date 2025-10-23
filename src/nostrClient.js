@@ -1,6 +1,7 @@
 const { finalizeEvent } = require('nostr-tools/pure');
 const nip04 = require('nostr-tools/nip04');
 const { SimplePool } = require('nostr-tools/pool');
+const keyUtils = require('./keyUtils');
 
 /**
  * Nostr Client - sends requests to the SDK backend
@@ -9,9 +10,15 @@ class NostrClient {
   constructor(options = {}) {
     this.relayUrls = options.relays || ['wss://dev-relay.lnfi.network'];
     this.pool = new SimplePool({ enablePing: true, enableReconnect: true });
-    this.privateKey = options.privateKey;
-    this.publicKey = options.publicKey;
-    this.serverPublicKey = options.serverPublicKey;
+    this.privateKey = options.privateKey
+      ? keyUtils.normalizeSecretKey(options.privateKey)
+      : undefined;
+   this.publicKey = options.publicKey
+         ? keyUtils.publicToHex(options.publicKey)
+         : undefined;
+    this.serverPublicKey = options.serverPublicKey
+         ? keyUtils.publicToHex(options.serverPublicKey)
+         : undefined;
     this.timeout = options.timeout || 30000;
   }
 
@@ -31,8 +38,33 @@ class NostrClient {
       const requestId = `${Date.now()}-${Math.random()}`;
       const request = { method, params, id: requestId };
 
+      let subscription;
+      let timeoutId;
+      let settled = false;
+
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        if (subscription) {
+          subscription.close();
+          subscription = null;
+        }
+      };
+
+      const finalize = (error, result) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      };
+
       try {
-        // Encrypt request
         const plaintext = JSON.stringify(request);
         const encrypted = await nip04.encrypt(
           this.privateKey,
@@ -40,7 +72,6 @@ class NostrClient {
           plaintext
         );
 
-        // Create event
         const event = {
           kind: 4,
           pubkey: this.publicKey,
@@ -51,59 +82,49 @@ class NostrClient {
 
         const signed = finalizeEvent(event, this.privateKey);
 
-        // Set timeout
-        const timeoutId = setTimeout(() => {
-          reject(new Error(`Request timeout after ${this.timeout}ms`));
-          subscription.close();
+        timeoutId = setTimeout(() => {
+          finalize(new Error(`Request timeout after ${this.timeout}ms`));
         }, this.timeout);
 
-        // Listen for replies - subscribe on all relays with SimplePool
-        let found = false;
-        const subscription = this.pool.subscribe(
+        subscription = this.pool.subscribe(
           this.relayUrls,
           { kinds: [4], '#p': [this.publicKey], authors: [this.serverPublicKey] },
           {
             onevent: async (replyEvent) => {
-                if (found) return;
+              if (settled) return;
 
-                // Ensure the reply targets this client
-                const pTag = replyEvent.tags.find(t => t[0] === 'p');
-                if (!pTag || pTag[1] !== this.publicKey || replyEvent.pubkey !== this.serverPublicKey) {
-                  return;
-                }
+              const pTag = replyEvent.tags.find(t => t[0] === 'p');
+              if (!pTag || pTag[1] !== this.publicKey || replyEvent.pubkey !== this.serverPublicKey) {
+                return;
+              }
 
-                try {
-                  const decrypted = await nip04.decrypt(
-                    this.privateKey,
-                    this.serverPublicKey,
-                    replyEvent.content
-                  );
-                  const response = JSON.parse(decrypted);
+              try {
+                const decrypted = await nip04.decrypt(
+                  this.privateKey,
+                  this.serverPublicKey,
+                  replyEvent.content
+                );
+                const response = JSON.parse(decrypted);
 
-                  if (response.id === requestId) {
-                    found = true;
-                    clearTimeout(timeoutId);
-                    subscription.close();
-
-                    if (response.error) {
-                      reject(new Error(response.error));
-                    } else {
-                      resolve(response.result);
-                    }
+                if (response.id === requestId) {
+                  if (response.error) {
+                    finalize(new Error(response.error));
+                  } else {
+                    finalize(null, response.result);
                   }
-                } catch (err) {
-                  console.error('Error decrypting reply:', err.message);
                 }
-              },
+              } catch (err) {
+                console.error('Error decrypting reply:', err.message);
+              }
+            },
           }
         );
 
-        // Publish request via SimplePool
         await Promise.any(this.pool.publish(this.relayUrls, signed));
 
         console.log(`Sent ${method}`);
       } catch (error) {
-        reject(error);
+        finalize(error);
       }
     });
   }
@@ -112,11 +133,39 @@ class NostrClient {
    * Send plain text direct message and wait for reply
    */
   async sendMessage(text, recipientPubkey, waitForReply = false) {
+    const recipientPubkeyHex = keyUtils.publicToHex(recipientPubkey);
+
     return new Promise(async (resolve, reject) => {
+      let subscription;
+      let timeoutId;
+      let settled = false;
+
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        if (subscription) {
+          subscription.close();
+          subscription = null;
+        }
+      };
+
+      const finalize = (error, result) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      };
+
       try {
         const encrypted = await nip04.encrypt(
           this.privateKey,
-          recipientPubkey,
+          recipientPubkeyHex,
           text
         );
 
@@ -124,7 +173,7 @@ class NostrClient {
           kind: 4,
           pubkey: this.publicKey,
           created_at: Math.floor(Date.now() / 1000),
-          tags: [['p', recipientPubkey]],
+          tags: [['p', recipientPubkeyHex]],
           content: encrypted,
         };
 
@@ -134,33 +183,30 @@ class NostrClient {
 
         if (!waitForReply) {
           await Promise.any(this.pool.publish(this.relayUrls, signed));
-          console.log(`Message sent to ${recipientPubkey.slice(0, 8)}`);
-          resolve({ success: true, timestamp: sentTimestamp, eventId: sentEventId });
+          console.log(`Message sent to ${recipientPubkeyHex.slice(0, 8)}`);
+          finalize(null, { success: true, timestamp: sentTimestamp, eventId: sentEventId });
           return;
         }
 
-        // Set timeout for reply
-        const timeoutId = setTimeout(() => {
-          subscription.close();
-          reject(new Error(`Reply timeout after ${this.timeout}ms`));
+        timeoutId = setTimeout(() => {
+          finalize(new Error(`Reply timeout after ${this.timeout}ms`));
         }, this.timeout);
 
-        // Listen for reply with #e tag matching sent event ID, starting from message send time
-        let found = false;
-        const subscription = this.pool.subscribe(
+        subscription = this.pool.subscribe(
           this.relayUrls,
-          { kinds: [4], '#p': [this.publicKey], authors: [recipientPubkey], since: sentTimestamp },
+          { kinds: [4], '#p': [this.publicKey], authors: [recipientPubkeyHex], since: sentTimestamp },
           {
             onevent: async (replyEvent) => {
-              if (found) return;
+              if (settled) return;
 
               console.log(`[Client] Received reply event ${replyEvent.id.slice(0, 8)} from ${replyEvent.pubkey.slice(0, 8)}`);
               console.log(`[Client] Event tags:`, replyEvent.tags);
               console.log(`[Client] Event content:`, replyEvent);
+
               try {
                 const pTag = replyEvent.tags.find(t => t[0] === 'p');
                 const eTag = replyEvent.tags.find(t => t[0] === 'e');
-                if (!pTag || pTag[1] !== this.publicKey || replyEvent.pubkey !== recipientPubkey) {
+                if (!pTag || pTag[1] !== this.publicKey || replyEvent.pubkey !== recipientPubkeyHex) {
                   console.log(`[Client] Skipping: p or author mismatch`);
                   return;
                 }
@@ -174,18 +220,14 @@ class NostrClient {
 
                 const decrypted = await nip04.decrypt(
                   this.privateKey,
-                  recipientPubkey,
+                  recipientPubkeyHex,
                   replyEvent.content
                 );
 
-                found = true;
-                clearTimeout(timeoutId);
-                subscription.close();
-
-                resolve({
+                finalize(null, {
                   success: true,
                   reply: decrypted,
-                  sender: recipientPubkey,
+                  sender: recipientPubkeyHex,
                   timestamp: replyEvent.created_at,
                   eventId: replyEvent.id,
                 });
@@ -196,12 +238,11 @@ class NostrClient {
           }
         );
 
-        // Publish message after subscription is ready
         await Promise.any(this.pool.publish(this.relayUrls, signed));
-        console.log(`Message sent to ${recipientPubkey.slice(0, 8)}, waiting for reply...`);
+        console.log(`Message sent to ${recipientPubkeyHex.slice(0, 8)}, waiting for reply...`);
       } catch (error) {
         console.error('Error sending message:', error.message);
-        reject(error);
+        finalize(error);
       }
     });
   }
@@ -210,9 +251,10 @@ class NostrClient {
    * Listen for plain text direct messages from a specific sender
    */
   listenForMessages(senderPubkey, onMessage, onError) {
+    const senderPubkeyHex = keyUtils.publicToHex(senderPubkey);
     const subscription = this.pool.subscribe(
       this.relayUrls,
-      { kinds: [4], '#p': [this.publicKey], authors: [senderPubkey] },
+      { kinds: [4], '#p': [this.publicKey], authors: [senderPubkeyHex] },
       {
         onevent: async (event) => {
           try {
@@ -223,7 +265,7 @@ class NostrClient {
 
             const decrypted = await nip04.decrypt(
               this.privateKey,
-              senderPubkey,
+              senderPubkeyHex,
               event.content
             );
 
