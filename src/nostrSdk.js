@@ -1,8 +1,8 @@
-const { finalizeEvent } = require('nostr-tools/pure');
-const nip04 = require('nostr-tools/nip04');
-const { SimplePool } = require('nostr-tools/pool');
-const { EventEmitter } = require('events');
-const keyUtils = require('./keyUtils');
+import { finalizeEvent } from 'nostr-tools/pure';
+import * as nip04 from 'nostr-tools/nip04';
+import { SimplePool } from 'nostr-tools/pool';
+import { EventEmitter } from 'events';
+import keyUtils from './keyUtils.js';
 
 /**
  * Nostr SDK - Backend server
@@ -190,4 +190,4 @@ class NostrSdk extends EventEmitter {
   }
 }
 
-module.exports = NostrSdk;
+export default NostrSdk;

@@ -1,16 +1,47 @@
 {
-  "name": "nostr-dev",
+  "name": "easy-nostr-client",
   "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "Easy-to-use Nostr client and SDK for JSON-RPC over NIP-04 direct messages.",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "nostr",
+    "sdk",
+    "json-rpc",
+    "nip04",
+    "client",
+    "server"
+  ],
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test.js",
+    "keepalive": "node test-keepalive.js",
+    "build": "vite build"
+  },
+  "author": "Easy Nostr Team",
   "license": "ISC",
-  "description": "",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "nostr-tools": "^2.17.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.7"
   }
 }

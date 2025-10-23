@@ -1,25 +1,25 @@
-const { getPublicKey } = require('nostr-tools/pure');
-const nip19 = require('nostr-tools/nip19');
-const { bytesToHex, hexToBytes } = require('@noble/hashes/utils');
+import { getPublicKey } from 'nostr-tools/pure';
+import * as nip19 from 'nostr-tools/nip19';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 
 /**
  * Determine if a value is an nsec (NIP-19 secret key)
  */
-function isNsecKey(value) {
+export function isNsecKey(value) {
   return typeof value === 'string' && value.startsWith('nsec1');
 }
 
 /**
  * Determine if a value is an npub (NIP-19 public key)
  */
-function isNpubKey(value) {
+export function isNpubKey(value) {
   return typeof value === 'string' && value.startsWith('npub1');
 }
 
 /**
  * Convert nsec to Uint8Array
  */
-function decodeNsecToBytes(nsecKey) {
+export function decodeNsecToBytes(nsecKey) {
   if (!isNsecKey(nsecKey)) {
     throw new Error('Invalid nsec key');
   }
@@ -30,7 +30,7 @@ function decodeNsecToBytes(nsecKey) {
 /**
  * Convert secret key (nsec | hex | Uint8Array) to Uint8Array
  */
-function normalizeSecretKey(secret) {
+export function normalizeSecretKey(secret) {
   if (secret instanceof Uint8Array) {
     return secret;
   }
@@ -51,7 +51,7 @@ function normalizeSecretKey(secret) {
 /**
  * Convert Uint8Array/Buffer/hex secret key to hex string
  */
-function secretToHex(secret) {
+export function secretToHex(secret) {
   const bytes = normalizeSecretKey(secret);
   return bytesToHex(bytes);
 }
@@ -59,7 +59,7 @@ function secretToHex(secret) {
 /**
  * Convert secret key to nsec string
  */
-function encodeSecretToNsec(secret) {
+export function encodeSecretToNsec(secret) {
   const bytes = normalizeSecretKey(secret);
   return nip19.nsecEncode(bytes);
 }
@@ -67,7 +67,7 @@ function encodeSecretToNsec(secret) {
 /**
  * Derive hex public key from secret (nsec | hex | Uint8Array)
  */
-function derivePubkeyFromSecret(secret) {
+export function derivePubkeyFromSecret(secret) {
   const bytes = normalizeSecretKey(secret);
   return getPublicKey(bytes);
 }
@@ -75,7 +75,7 @@ function derivePubkeyFromSecret(secret) {
 /**
  * Convert npub to hex public key
  */
-function decodeNpubToHex(npubKey) {
+export function decodeNpubToHex(npubKey) {
   if (!isNpubKey(npubKey)) {
     throw new Error('Invalid npub key');
   }
@@ -86,7 +86,7 @@ function decodeNpubToHex(npubKey) {
 /**
  * Convert hex/Uint8Array public key to npub
  */
-function encodePubkeyToNpub(pubkey) {
+export function encodePubkeyToNpub(pubkey) {
   const hex = publicToHex(pubkey);
   return nip19.npubEncode(hex);
 }
@@ -94,7 +94,7 @@ function encodePubkeyToNpub(pubkey) {
 /**
  * Normalize public key to hex string
  */
-function publicToHex(pubkey) {
+export function publicToHex(pubkey) {
   if (pubkey instanceof Uint8Array) {
     return bytesToHex(pubkey);
   }
@@ -112,11 +112,11 @@ function publicToHex(pubkey) {
   throw new Error('Unsupported public key format');
 }
 
-function isHex64(value) {
+export function isHex64(value) {
   return typeof value === 'string' && /^[0-9a-fA-F]{64}$/.test(value);
 }
 
-module.exports = {
+const keyUtils = {
   isNsecKey,
   isNpubKey,
   decodeNsecToBytes,
@@ -129,3 +129,5 @@ module.exports = {
   publicToHex,
   isHex64,
 };
+
+export default keyUtils;

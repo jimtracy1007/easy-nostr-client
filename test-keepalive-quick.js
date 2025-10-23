@@ -5,7 +5,7 @@ useWebSocketImplementation(WebSocket);
 const NostrSdk = require('./src/nostrSdk');
 const NostrClient = require('./src/nostrClient');
 
-// 生成的测试密钥
+// Generated test keys
 const SERVER_PRIVATE_KEY = '0d515bdddf9eb09eeb41c058070a493b110d48ba613bb8f9eeff60aef7ecc2fe';
 const SERVER_PUBLIC_KEY = 'c037c7a68fd9e2642646f5b32854bece9f024cd4909d05b511a073b44e616025';
 
@@ -15,7 +15,7 @@ const CLIENT_PUBLIC_KEY = '5dce25e51ae62778abcedf4627a6946e6194e815279857f75fe3e
 const RELAY_URL = 'wss://dev-relay.lnfi.network';
 
 /**
- * 业务方法 - 心跳检测
+ * RPC method - heartbeat check
  */
 function heartbeat(params, event) {
   return {
@@ -26,13 +26,13 @@ function heartbeat(params, event) {
 }
 
 /**
- * 快速测试版本 - 验证连接稳定性
+ * Quick test variant - verify connection stability
  */
 async function runKeepaliveTest() {
   console.log('🚀 Starting Nostr SDK Keepalive Test (Quick Version)\n');
   console.log('Test duration: 1 minute (sends heartbeat every 10 seconds)\n');
 
-  // 初始化服务器
+  // Initialize server
   const sdk = new NostrSdk({
     relays: [RELAY_URL],
     privateKey: Buffer.from(SERVER_PRIVATE_KEY, 'hex'),
@@ -40,20 +40,20 @@ async function runKeepaliveTest() {
     allowedAuthors: [CLIENT_PUBLIC_KEY],
   });
 
-  // 注册业务方法
+  // Register RPC handlers
   sdk.registerMethod('heartbeat', heartbeat);
 
-  // 监听事件
+  // Subscribe to SDK lifecycle events
   sdk.on('error', (err) => console.error('❌ SDK Error:', err.message));
   sdk.on('started', () => console.log('✅ Server started and listening\n'));
 
-  // 启动服务器
+  // Start server
   await sdk.start();
 
-  // 等待服务器充分启动
+  // Allow server to warm up
   await new Promise(resolve => setTimeout(resolve, 5000));
 
-  // 初始化客户端
+  // Initialize client
   const client = new NostrClient({
     relays: [RELAY_URL],
     privateKey: Buffer.from(CLIENT_PRIVATE_KEY, 'hex'),
@@ -62,15 +62,15 @@ async function runKeepaliveTest() {
     timeout: 30000,
   });
 
-  // 连接客户端
+  // Connect client
   await client.connect();
 
-  // 等待客户端订阅建立
+  // Wait for client subscription to settle
   await new Promise(resolve => setTimeout(resolve, 2000));
 
-  // 测试参数
-  const HEARTBEAT_INTERVAL = 10 * 1000; // 10 秒
-  const TEST_DURATION = 60 * 1000; // 1 分钟
+  // Test parameters
+  const HEARTBEAT_INTERVAL = 10 * 1000; // 10 seconds
+  const TEST_DURATION = 60 * 1000; // 1 minute
   const START_TIME = Date.now();
 
   let heartbeatCount = 0;
@@ -80,7 +80,7 @@ async function runKeepaliveTest() {
 
   console.log('Starting heartbeat loop...\n');
 
-  // 发送心跳函数
+  // Heartbeat helper
   const sendHeartbeat = async () => {
     heartbeatCount++;
     const elapsed = Math.round((Date.now() - START_TIME) / 1000);
@@ -103,13 +103,13 @@ async function runKeepaliveTest() {
     }
   };
 
-  // 立即发送第一个心跳
+  // Send first heartbeat immediately
   await sendHeartbeat();
 
-  // 设置定时心跳
+  // Schedule recurring heartbeat
   const heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
 
-  // 设置测试超时
+  // Schedule test completion summary
   const testTimer = setTimeout(async () => {
     clearInterval(heartbeatTimer);
 
@@ -133,7 +133,7 @@ async function runKeepaliveTest() {
 
     console.log('==================================\n');
 
-    // 清理资源
+    // Cleanup resources
     console.log('🛑 Cleaning up...');
     client.close();
     sdk.stop();
@@ -147,7 +147,7 @@ async function runKeepaliveTest() {
     }
   }, TEST_DURATION);
 
-  // 优雅关闭
+  // Graceful shutdown
   process.on('SIGINT', () => {
     clearInterval(heartbeatTimer);
     clearTimeout(testTimer);
@@ -158,7 +158,7 @@ async function runKeepaliveTest() {
   });
 }
 
-// 运行测试
+// Kick off keepalive test
 runKeepaliveTest().catch((error) => {
   console.error('❌ Test failed:', error);
   process.exit(1);

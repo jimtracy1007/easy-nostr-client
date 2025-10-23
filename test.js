@@ -5,7 +5,7 @@ useWebSocketImplementation(WebSocket);
 const NostrSdk = require('./src/nostrSdk');
 const NostrClient = require('./src/nostrClient');
 
-// 生成的测试密钥
+// Generated test keys
 const SERVER_PRIVATE_KEY = '0d515bdddf9eb09eeb41c058070a493b110d48ba613bb8f9eeff60aef7ecc2fe';
 const SERVER_PUBLIC_KEY = 'c037c7a68fd9e2642646f5b32854bece9f024cd4909d05b511a073b44e616025';
 
@@ -15,7 +15,7 @@ const CLIENT_PUBLIC_KEY = '5dce25e51ae62778abcedf4627a6946e6194e815279857f75fe3e
 const RELAY_URL = 'wss://dev-relay.lnfi.network';
 
 /**
- * 业务方法示例
+ * Example RPC handlers
  */
 function getInfo(params, event) {
   return {
@@ -46,36 +46,36 @@ async function echo(params, event) {
 }
 
 /**
- * 主测试流程
+ * Main integration test flow
  */
 async function runTests() {
   console.log('🚀 Starting Nostr SDK Integration Test\n');
 
-  // 初始化服务器
+  // Initialize server
   const sdk = new NostrSdk({
     relays: [RELAY_URL],
     privateKey: Buffer.from(SERVER_PRIVATE_KEY, 'hex'),
     publicKey: SERVER_PUBLIC_KEY,
   });
 
-  // 注册业务方法
+  // Register RPC handlers
   sdk.registerMethod('getinfo', getInfo);
   sdk.registerMethod('add', add);
   sdk.registerMethod('echo', echo);
 
-  // 监听事件
+  // Subscribe to SDK lifecycle events
   sdk.on('error', (err) => console.error('❌ SDK Error:', err.message));
   sdk.on('started', () => console.log('✅ SDK started and listening\n'));
 
-  // 启动服务器
+  // Start server
   await sdk.start();
 
-  // 等待服务器充分启动 - 增加到 5 秒
+  // Allow server to warm up (5 seconds)
   console.log('Waiting for server to fully initialize...');
   await new Promise(resolve => setTimeout(resolve, 5000));
   console.log('Server ready, starting client tests\n');
 
-  // 初始化客户端
+  // Initialize client
   const client = new NostrClient({
     relays: [RELAY_URL],
     privateKey: Buffer.from(CLIENT_PRIVATE_KEY, 'hex'),
@@ -84,13 +84,13 @@ async function runTests() {
     timeout: 20000,
   });
 
-  // 连接客户端并建立订阅
+  // Connect client and prepare subscriptions
   await client.connect();
 
-  // 等待客户端订阅建立
+  // Wait for client subscription to settle
   await new Promise(resolve => setTimeout(resolve, 2000));
 
-  // 测试用例
+  // Test matrix
   const tests = [
     {
       name: 'getinfo',
@@ -115,7 +115,7 @@ async function runTests() {
     },
   ];
 
-  // 执行测试
+  // Execute scenarios sequentially
   for (const test of tests) {
     try {
       console.log(`\n📤 Test: ${test.name}`);
@@ -137,11 +137,11 @@ async function runTests() {
       }
     }
 
-    // 测试间隔
+    // Small delay between cases
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  // 清理资源
+  // Cleanup resources
   console.log('\n\n🛑 Cleaning up...');
   client.close();
   sdk.stop();
@@ -150,7 +150,7 @@ async function runTests() {
   process.exit(0);
 }
 
-// 运行测试
+// Kick off test runner
 runTests().catch((error) => {
   console.error('❌ Test failed:', error);
   process.exit(1);

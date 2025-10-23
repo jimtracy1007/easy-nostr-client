@@ -1,7 +1,7 @@
-const { finalizeEvent } = require('nostr-tools/pure');
-const nip04 = require('nostr-tools/nip04');
-const { SimplePool } = require('nostr-tools/pool');
-const keyUtils = require('./keyUtils');
+import { finalizeEvent } from 'nostr-tools/pure';
+import * as nip04 from 'nostr-tools/nip04';
+import { SimplePool } from 'nostr-tools/pool';
+import keyUtils from './keyUtils.js';
 
 /**
  * Nostr Client - sends requests to the SDK backend
@@ -294,4 +294,4 @@ class NostrClient {
   }
 }
 
-module.exports = NostrClient;
+export default NostrClient;
