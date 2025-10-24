@@ -1,10 +1,9 @@
-const { useWebSocketImplementation } = require('nostr-tools/pool');
+
 const WebSocket = require('ws');
-WebSocket.prototype.setMaxListeners(0); 
+// WebSocket.prototype.setMaxListeners(0); 
+const { NostrSdk, NostrClient,useWebSocketImplementation } = require('./dist/index.cjs');
 useWebSocketImplementation(WebSocket);
 
-const NostrSdk = require('./src/nostrSdk');
-const NostrClient = require('./src/nostrClient');
 
 // Generated test keys
 const SERVER_PRIVATE_KEY = '0d515bdddf9eb09eeb41c058070a493b110d48ba613bb8f9eeff60aef7ecc2fe';

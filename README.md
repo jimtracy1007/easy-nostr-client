@@ -122,6 +122,17 @@ sdk.registerMethod('admin', async (params, event, eventId, senderPubkey) => {
   return { admin: true, sender: senderPubkey };
 }, { authMode: 'whitelist' });
 
+// Register method with custom auth handler (e.g. database lookup)
+sdk.registerMethod('restricted', async (params) => {
+  return { secret: 'classified' };
+}, {
+  authMode: 'custom',
+  authHandler: async (senderPubkey) => {
+    const user = await db.users.findByPubkey(senderPubkey);
+    return user?.role === 'admin';
+  },
+});
+
 sdk.on('started', () => console.log('Server ready'));
 sdk.on('error', (err) => console.error('SDK error:', err));
 

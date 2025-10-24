@@ -2,17 +2,16 @@ const { useWebSocketImplementation } = require('nostr-tools/pool');
 const WebSocket = require('ws');
 useWebSocketImplementation(WebSocket);
 
-const NostrSdk = require('./src/nostrSdk');
-const NostrClient = require('./src/nostrClient');
+const { NostrSdk, NostrClient } = require('./dist/index.cjs');
 
 // Generated test keys
-const SERVER_PRIVATE_KEY = '0d515bdddf9eb09eeb41c058070a493b110d48ba613bb8f9eeff60aef7ecc2fe';
-const SERVER_PUBLIC_KEY = 'c037c7a68fd9e2642646f5b32854bece9f024cd4909d05b511a073b44e616025';
+const SERVER_PRIVATE_KEY = process.env.SERVER_PRIV_KEY || '0d515bdddf9eb09eeb41c058070a493b110d48ba613bb8f9eeff60aef7ecc2fe';
+const SERVER_PUBLIC_KEY = process.env.SERVER_PUB_KEY || 'c037c7a68fd9e2642646f5b32854bece9f024cd4909d05b511a073b44e616025';
 
-const CLIENT_PRIVATE_KEY = '66b0f0bbe65d49f650a994dea9c8c014de12197f3c50dae9430afc28547f3537';
-const CLIENT_PUBLIC_KEY = '5dce25e51ae62778abcedf4627a6946e6194e815279857f75fe3e276100a1cec';
+const CLIENT_PRIVATE_KEY = process.env.CLIENT_PRIV_KEY || '66b0f0bbe65d49f650a994dea9c8c014de12197f3c50dae9430afc28547f3537';
+const CLIENT_PUBLIC_KEY = process.env.CLIENT_PUB_KEY || '5dce25e51ae62778abcedf4627a6946e6194e815279857f75fe3e276100a1cec';
 
-const RELAY_URL = 'wss://dev-relay.lnfi.network';
+const RELAY_URL = process.env.RELAY_URL || 'wss://dev-relay.lnfi.network';
 
 /**
  * Example RPC handlers
@@ -50,6 +49,11 @@ async function echo(params, event) {
  */
 async function runTests() {
   console.log('🚀 Starting Nostr SDK Integration Test\n');
+  console.log('Configuration:', {
+    relay: RELAY_URL,
+    serverPub: SERVER_PUBLIC_KEY.slice(0, 8),
+    clientPub: CLIENT_PUBLIC_KEY.slice(0, 8),
+  });
 
   // Initialize server
   const sdk = new NostrSdk({
