@@ -1,3 +1,4 @@
 node_modules
 .claude
 test2.js
+dist

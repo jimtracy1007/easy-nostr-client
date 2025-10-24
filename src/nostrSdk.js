@@ -5,8 +5,34 @@ import { EventEmitter } from 'events';
 import keyUtils from './keyUtils.js';
 
 /**
+ * Create default memory-based event storage adapter
+ */
+function createMemoryQueue() {
+  const queue = [];
+  let idCounter = 0;
+
+  return {
+    async enqueue(event) {
+      const storageId = `mem_${Date.now()}_${idCounter++}`;
+      queue.push({ storageId, event });
+      return storageId;
+    },
+    async dequeueBatch(limit) {
+      return queue.splice(0, limit);
+    },
+    async ack(storageId, meta) {
+      // Memory queue auto-removes on dequeue, no-op for ack
+    },
+    async size() {
+      return queue.length;
+    },
+  };
+}
+
+/**
  * Nostr SDK - Backend server
  * Listen for direct messages, parse JSON-RPC style requests, call business methods, and return results
+ * Supports immediate and queued processing modes with dynamic whitelist management
  */
 class NostrSdk extends EventEmitter {
   constructor(options = {}) {
@@ -19,22 +45,98 @@ class NostrSdk extends EventEmitter {
     this.publicKey = options.publicKey
       ? keyUtils.publicToHex(options.publicKey)
       : undefined;
-    this.authorWhitelist = Array.isArray(options.allowedAuthors)
+
+    // Processing mode: 'immediate' or 'queued'
+    this.processingMode = options.processingMode || 'immediate';
+    
+    // Event storage adapter (default: memory queue)
+    this.eventStorage = options.eventStorage || createMemoryQueue();
+    
+    // Processing rate (events per second, max 3 due to relay limits)
+    this.processingRate = Math.min(options.processingRate || 3, 3);
+    
+    // Event processing timeout (default 30 seconds)
+    this.eventTimeout = options.eventTimeout || 30000;
+    
+    // Internal whitelist array (initialized from allowedAuthors)
+    this._authorWhitelist = Array.isArray(options.allowedAuthors)
       ? options.allowedAuthors.map(keyUtils.publicToHex)
       : [];
+    
+    // Custom whitelist getter (takes precedence over internal array)
+    this._customGetAuthorWhitelist = options.getAuthorWhitelist;
+    
+    // Method registry: Map<methodName, { handler, authConfig }>
     this.methodRegistry = new Map();
+    
     this.isListening = false;
     this.subscription = null;
+    this.queueTimer = null;
+    this._isProcessing = false;
   }
 
   /**
-   * Register business methods
+   * Register business methods with optional auth configuration
+   * @param {string} method - Method name
+   * @param {Function} handler - Handler function
+   * @param {Object} authConfig - Optional auth config { authMode, whitelist, authHandler }
    */
-  registerMethod(method, handler) {
+  registerMethod(method, handler, authConfig = {}) {
     if (typeof handler !== 'function') {
       throw new Error(`Handler for method "${method}" must be a function`);
     }
-    this.methodRegistry.set(method, handler);
+    this.methodRegistry.set(method, {
+      handler,
+      authConfig: {
+        authMode: authConfig.authMode || 'public',
+        whitelist: authConfig.whitelist || null,
+        authHandler: authConfig.authHandler || null,
+      },
+    });
+  }
+
+  /**
+   * Get current author whitelist (supports custom implementation)
+   * @returns {Promise<string[]|null>} Whitelist array or null (no restriction)
+   */
+  async getAuthorWhitelist() {
+    if (this._customGetAuthorWhitelist) {
+      const result = this._customGetAuthorWhitelist();
+      return result instanceof Promise ? await result : result;
+    }
+    return this._authorWhitelist.length > 0 ? this._authorWhitelist : null;
+  }
+
+  /**
+   * Add pubkeys to internal whitelist
+   */
+  addToWhitelist(...pubkeys) {
+    const normalized = pubkeys.map(keyUtils.publicToHex);
+    this._authorWhitelist.push(...normalized.filter(pk => !this._authorWhitelist.includes(pk)));
+  }
+
+  /**
+   * Remove pubkeys from internal whitelist
+   */
+  removeFromWhitelist(...pubkeys) {
+    const normalized = pubkeys.map(keyUtils.publicToHex);
+    this._authorWhitelist = this._authorWhitelist.filter(pk => !normalized.includes(pk));
+  }
+
+  /**
+   * Clear internal whitelist
+   */
+  clearWhitelist() {
+    this._authorWhitelist = [];
+  }
+
+  /**
+   * Check if pubkey is in current whitelist
+   */
+  async isInWhitelist(pubkey) {
+    const whitelist = await this.getAuthorWhitelist();
+    if (!whitelist || whitelist.length === 0) return true;
+    return whitelist.includes(keyUtils.publicToHex(pubkey));
   }
 
   /**
@@ -53,17 +155,13 @@ class NostrSdk extends EventEmitter {
     this.isListening = true;
     console.log(`Starting Nostr SDK on relays: ${this.relayUrls.join(', ')}`);
 
-    // Use SimplePool to subscribe to direct message events (kind 4)
-    // Use since to only get new messages, not load history
+    // Subscribe to direct message events (kind 4)
+    // Note: No filter.authors - dynamic whitelist check in _handleEvent
     const filter = {
       kinds: [4],
       since: Math.floor(Date.now() / 1000),
       '#p': [this.publicKey],
     };
-
-    if (this.authorWhitelist.length > 0) {
-      filter.authors = this.authorWhitelist;
-    }
 
     this.subscription = this.pool.subscribe(
       this.relayUrls,
@@ -73,30 +171,158 @@ class NostrSdk extends EventEmitter {
       }
     );
 
-    console.log(`Subscribed to all relays`);
+    // Start queue processor for queued mode
+    if (this.processingMode === 'queued') {
+      this._startQueueProcessor();
+    }
+
+    console.log(`Subscribed to all relays (mode: ${this.processingMode})`);
     this.emit('started');
   }
 
   /**
-   * Handle received events
+   * Start queue processor timer
+   */
+  _startQueueProcessor() {
+    const intervalMs = Math.floor(1000 / this.processingRate);
+    this.queueTimer = setInterval(() => this._processQueue(), intervalMs);
+  }
+
+  /**
+   * Process queued events in batches with timeout and parallel execution
+   */
+  async _processQueue() {
+    // Prevent concurrent batch processing
+    if (this._isProcessing) return;
+    
+    this._isProcessing = true;
+    try {
+      const batchSize = Math.max(1, this.processingRate);
+      const items = await this.eventStorage.dequeueBatch(batchSize);
+
+      if (items.length === 0) return;
+
+      // Process items in parallel with timeout
+      const results = await Promise.allSettled(
+        items.map(item => this._processWithTimeout(item))
+      );
+
+      // Ack based on results
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const result = results[i];
+        
+        if (result.status === 'fulfilled') {
+          await this.eventStorage.ack(item.storageId, { status: 'success' });
+        } else {
+          const error = result.reason?.message || 'Unknown error';
+          console.error(`Error processing ${item.storageId}:`, error);
+          await this.eventStorage.ack(item.storageId, { 
+            status: 'failed', 
+            error 
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error in queue processor:', error.message);
+    } finally {
+      this._isProcessing = false;
+    }
+  }
+
+  /**
+   * Process event with timeout wrapper
+   */
+  async _processWithTimeout(item) {
+    let timeoutHandle;
+    
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(
+        () => reject(new Error('Event processing timeout')), 
+        this.eventTimeout
+      );
+    });
+    
+    try {
+      const result = await Promise.race([
+        this._processStoredEvent(item),
+        timeoutPromise
+      ]);
+      return result;
+    } finally {
+      // Clear timeout to prevent memory leak
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+  }
+
+  /**
+   * Process a single stored event from queue
+   */
+  async _processStoredEvent(item) {
+    const { event } = item;
+
+    // Re-check global whitelist (may have changed since enqueue)
+    const whitelist = await this.getAuthorWhitelist();
+    if (whitelist && whitelist.length > 0 && !whitelist.includes(event.pubkey)) {
+      // Throw error to prevent outer ack from overwriting failure status
+      throw new Error('sender_not_allowed');
+    }
+
+    // Decrypt and process (same as immediate mode)
+    await this._processDecryptedEvent(event);
+  }
+
+  /**
+   * Handle received events (entry point)
    */
   async _handleEvent(event) {
     try {
-      console.log(`[SDK] Received event from ${event.pubkey.slice(0, 8)}`);
-      
-      // Check if this message is for us
+      // 1. Check if message is for us (p-tag validation)
       const pTag = event.tags.find(t => t[0] === 'p');
       if (!pTag || pTag[1] !== this.publicKey) {
-        console.log(`[SDK] Message not for us (expected ${this.publicKey.slice(0, 8)})`);
-        return; // Not a message for us
+        return;
       }
-      
-      console.log(`[SDK] Processing message for us`);
 
+      // 2. Global whitelist pre-filter
+      const whitelist = await this.getAuthorWhitelist();
+      if (whitelist && whitelist.length > 0 && !whitelist.includes(event.pubkey)) {
+        console.log(`[SDK] Sender ${event.pubkey.slice(0, 8)} not in whitelist`);
+        return;
+      }
+
+      // 3. Route based on processing mode
+      if (this.processingMode === 'immediate') {
+        await this._processDecryptedEvent(event);
+      } else {
+        // Queued mode: store event for later processing
+        await this._storeEvent(event);
+      }
+    } catch (error) {
+      console.error('Error in _handleEvent:', error.message);
+    }
+  }
+
+  /**
+   * Store event to queue (queued mode only)
+   */
+  async _storeEvent(event) {
+    try {
+      const storageId = await this.eventStorage.enqueue(event);
+      console.log(`[SDK] Event ${event.id?.slice(0, 8)} queued as ${storageId}`);
+    } catch (error) {
+      console.error('Error storing event:', error.message);
+    }
+  }
+
+  /**
+   * Process decrypted event (shared by immediate and queued modes)
+   */
+  async _processDecryptedEvent(event) {
+    try {
       // Decrypt direct message content
       const decrypted = await nip04.decrypt(this.privateKey, event.pubkey, event.content);
 
-      // Try to parse JSON
+      // Parse JSON request
       let request;
       try {
         request = JSON.parse(decrypted);
@@ -111,14 +337,27 @@ class NostrSdk extends EventEmitter {
         return;
       }
 
-      // Call business method
-      const handler = this.methodRegistry.get(request.method);
-      if (!handler) {
+      // Get method handler and auth config
+      const methodEntry = this.methodRegistry.get(request.method);
+      if (!methodEntry) {
         await this._replyError(event.pubkey, `Method not found: ${request.method}`, request.id);
         return;
       }
 
-      const result = await handler(request.params || {}, event);
+      // Check method-level permissions
+      const hasPermission = await this._checkPermission(request.method, event.pubkey, methodEntry.authConfig);
+      if (!hasPermission) {
+        await this._replyError(event.pubkey, `Permission denied for method: ${request.method}`, request.id);
+        return;
+      }
+
+      // Call handler with enhanced parameters
+      const result = await methodEntry.handler(
+        request.params || {}, 
+        event, 
+        event.id, 
+        event.pubkey
+      );
 
       // Return result
       await this._reply(event.pubkey, {
@@ -127,8 +366,36 @@ class NostrSdk extends EventEmitter {
         error: null,
       });
     } catch (error) {
-      console.error('Error processing event:', error.message);
+      console.error('Error processing decrypted event:', error.message);
     }
+  }
+
+  /**
+   * Check method-level permissions
+   */
+  async _checkPermission(methodName, senderPubkey, authConfig) {
+    const { authMode, whitelist, authHandler } = authConfig;
+
+    // Public mode: always allow
+    if (authMode === 'public') {
+      return true;
+    }
+
+    // Whitelist mode: check method-level or global whitelist
+    if (authMode === 'whitelist') {
+      if (whitelist && whitelist.length > 0) {
+        return whitelist.includes(senderPubkey);
+      }
+      // Fallback to global whitelist
+      return await this.isInWhitelist(senderPubkey);
+    }
+
+    // Custom mode: call custom auth handler
+    if (authMode === 'custom' && authHandler) {
+      return await authHandler(senderPubkey);
+    }
+
+    return false;
   }
 
   /**
@@ -171,10 +438,16 @@ class NostrSdk extends EventEmitter {
   }
 
   /**
-   * Stop listening
+   * Stop listening and cleanup resources
    */
   stop() {
     this.isListening = false;
+
+    // Clear queue processor timer
+    if (this.queueTimer) {
+      clearInterval(this.queueTimer);
+      this.queueTimer = null;
+    }
 
     // Close subscription
     if (this.subscription) {

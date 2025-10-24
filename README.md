@@ -10,8 +10,13 @@
 - **Persistent relay pool** powered by `SimplePool` with automatic ping/reconnect
 - **NIP-04 encryption** for every request/response pair
 - **JSON-RPC payloads** using the familiar `{ method, params, id }` shape
-- **Method registry** through `NostrSdk.registerMethod()` for quick business wiring
-- **Strict filtering** (`kinds`, `authors`, `#p`) to process only the intended events
+- **Dual processing modes**: immediate (default) and queued with rate limiting
+- **Timeout protection**: configurable per-event timeout with automatic failure handling
+- **Parallel batch processing**: events processed concurrently within rate limits
+- **Dynamic whitelist management** with async support for database/Redis integration
+- **Method-level permissions** (public, whitelist, custom auth handlers)
+- **Pluggable event storage** for custom queue backends (database, message queues)
+- **Enhanced handler interface** with eventId and senderPubkey parameters
 - **Utility re-exports** (`nip04`, `nip19`, `keyUtils`, etc.) ready for custom workflows
 
 # Installation
@@ -96,32 +101,179 @@ Store secrets securely (environment variables, secret manager, etc.).
 
 ## 2. Server (backend)
 
+### Basic usage (immediate mode)
+
 ```javascript
 // server.js
 import { NostrSdk } from 'easy-nostr-client';
 
 const sdk = new NostrSdk({
   relays: ['wss://relay.example.com'],
-  privateKey: serverSk, // accepts Uint8Array or Buffer
+  privateKey: serverSk,
   publicKey: serverPk,
-  allowedAuthors: [clientPk], // optional whitelist
+  allowedAuthors: [clientPk], // optional initial whitelist
 });
 
+// Register public method
 sdk.registerMethod('add', async ({ a, b }) => ({ sum: a + b }));
-sdk.registerMethod('greet', async ({ name }) => ({ message: `Hello ${name}!` }));
+
+// Register method with whitelist auth
+sdk.registerMethod('admin', async (params, event, eventId, senderPubkey) => {
+  return { admin: true, sender: senderPubkey };
+}, { authMode: 'whitelist' });
 
 sdk.on('started', () => console.log('Server ready'));
 sdk.on('error', (err) => console.error('SDK error:', err));
 
-(async () => {
-  await sdk.start();
-})();
+await sdk.start();
 
 process.on('SIGINT', () => {
   sdk.stop();
   process.exit(0);
 });
 ```
+
+### Queued mode with rate limiting and timeout
+
+```javascript
+const sdk = new NostrSdk({
+  relays: ['wss://relay.example.com'],
+  privateKey: serverSk,
+  publicKey: serverPk,
+  processingMode: 'queued',
+  processingRate: 3,      // max 3 events/second (relay limit)
+  eventTimeout: 30000,    // 30s timeout per event (default)
+});
+
+sdk.registerMethod('process', async (params) => {
+  // Heavy processing here (will timeout after 30s)
+  return { processed: true };
+});
+
+await sdk.start();
+```
+
+### Dynamic whitelist with database
+
+```javascript
+const sdk = new NostrSdk({
+  relays: ['wss://relay.example.com'],
+  privateKey: serverSk,
+  publicKey: serverPk,
+  getAuthorWhitelist: async () => {
+    // Query from database/Redis
+    const users = await db.getActiveUsers();
+    return users.map(u => u.pubkey);
+  },
+});
+
+// Or use built-in whitelist management
+sdk.addToWhitelist('pubkey1', 'pubkey2');
+sdk.removeFromWhitelist('pubkey1');
+```
+
+### Custom event storage (database queue)
+
+```javascript
+const sdk = new NostrSdk({
+  processingMode: 'queued',
+  eventStorage: {
+    async enqueue(event) {
+      const id = await db.events.insert(event);
+      return id.toString();
+    },
+    async dequeueBatch(limit) {
+      const rows = await db.events.findPending(limit);
+      return rows.map(r => ({ storageId: r.id, event: r.data }));
+    },
+    async ack(storageId, meta) {
+      // meta: { status: 'success' | 'failed', error?: string }
+      await db.events.update(storageId, { 
+        status: meta.status,
+        error: meta.error,
+        processed_at: new Date()
+      });
+    },
+  },
+});
+```
+
+### SQLite queue implementation example
+
+```javascript
+import Database from 'better-sqlite3';
+
+function createSQLiteQueue(dbPath) {
+  const db = new Database(dbPath);
+  
+  // Create table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS event_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_data TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      error TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      processed_at DATETIME
+    )
+  `);
+
+  return {
+    async enqueue(event) {
+      const stmt = db.prepare(
+        'INSERT INTO event_queue (event_data) VALUES (?)'
+      );
+      const result = stmt.run(JSON.stringify(event));
+      return result.lastInsertRowid.toString();
+    },
+
+    async dequeueBatch(limit) {
+      const stmt = db.prepare(`
+        SELECT id, event_data 
+        FROM event_queue 
+        WHERE status = 'pending' 
+        ORDER BY created_at ASC 
+        LIMIT ?
+      `);
+      const rows = stmt.all(limit);
+      
+      return rows.map(row => ({
+        storageId: row.id.toString(),
+        event: JSON.parse(row.event_data)
+      }));
+    },
+
+    async ack(storageId, meta) {
+      const stmt = db.prepare(`
+        UPDATE event_queue 
+        SET status = ?, error = ?, processed_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `);
+      stmt.run(meta.status, meta.error || null, storageId);
+    },
+
+    // Optional: cleanup old processed events
+    async cleanup(olderThanDays = 7) {
+      const stmt = db.prepare(`
+        DELETE FROM event_queue 
+        WHERE status != 'pending' 
+        AND processed_at < datetime('now', '-' || ? || ' days')
+      `);
+      return stmt.run(olderThanDays);
+    }
+  };
+}
+
+// Usage
+const sdk = new NostrSdk({
+  processingMode: 'queued',
+  eventStorage: createSQLiteQueue('./events.db'),
+});
+```
+
+**Meta field status values:**
+- `'success'` - Event processed successfully
+- `'failed'` - Processing failed (includes timeout, errors, permission denied)
 
 ## 3. Client
 
@@ -183,17 +335,45 @@ Errors set `result` to `null` and populate `error` with a message.
 | `relays` | `string[]` | `['wss://dev-relay.lnfi.network']` | Relay endpoints to join |
 | `privateKey` | `Buffer` \| `Uint8Array` | — | Server secret key |
 | `publicKey` | `string` | — | Server public key (hex) |
-| `allowedAuthors` | `string[]` | `[]` | Optional whitelist of client pubkeys |
+| `allowedAuthors` | `string[]` | `[]` | Initial whitelist (deprecated, use `getAuthorWhitelist`) |
+| `getAuthorWhitelist` | `Function` | — | Async/sync function returning `string[]` or `null` |
+| `processingMode` | `'immediate'` \| `'queued'` | `'immediate'` | Event processing mode |
+| `processingRate` | `number` | `3` | Events per second (queued mode, max 3) |
+| `eventTimeout` | `number` | `30000` | Event processing timeout in ms (queued mode) |
+| `eventStorage` | `Object` | Memory queue | Custom storage adapter with `enqueue`, `dequeueBatch`, `ack` |
 
 Methods:
 
-- `registerMethod(method, handler)` – register an async handler `(params, event) => result`.
-- `start()` – connect to relays and begin listening for kind-4 events.
-- `stop()` – dispose subscriptions and close the pool.
+- `registerMethod(method, handler, authConfig?)` – register handler with optional auth config
+  - Handler signature: `(params, event, eventId, senderPubkey) => result`
+  - Auth config: `{ authMode: 'public'|'whitelist'|'custom', whitelist?, authHandler? }`
+- `start()` – connect to relays and begin listening
+- `stop()` – cleanup resources and close connections
+- `getAuthorWhitelist()` – get current whitelist (async)
+- `addToWhitelist(...pubkeys)` – add to internal whitelist
+- `removeFromWhitelist(...pubkeys)` – remove from internal whitelist
+- `clearWhitelist()` – clear internal whitelist
+- `isInWhitelist(pubkey)` – check if pubkey is allowed (async)
 
 Events:
 
 - `started`, `stopped`, `error`
+
+### Auth modes
+
+- **public**: No restrictions (default)
+- **whitelist**: Check method-level or global whitelist
+- **custom**: Use custom `authHandler(senderPubkey) => boolean`
+
+### Event storage adapter interface
+
+```javascript
+{
+  async enqueue(event) { return storageId; },
+  async dequeueBatch(limit) { return [{ storageId, event }]; },
+  async ack(storageId, meta) { /* meta: { status, error } */ },
+}
+```
 
 ## `new NostrClient(options)`
 
@@ -235,7 +415,13 @@ The integration test covers `getinfo`, `add`, `echo`, and missing-method scenari
 - **Relay latency** – adjust `timeout` according to your relay infrastructure.
 - **Key security** – never hardcode real keys; rely on environment secrets.
 - **Signature validation** – `verifyEvent` is exported if you need additional checks.
-- **Rate limiting** – consider adding throttling/anti-replay in production.
+- **Rate limiting** – use `processingMode: 'queued'` with `processingRate` for built-in rate control.
+- **Relay limits** – most relays limit to 3 events/second; `processingRate` is capped at 3.
+- **Timeout protection** – queued mode processes events in parallel with `eventTimeout` protection; slow events won't block the batch.
+- **Concurrency control** – batch processing uses `_isProcessing` flag to prevent timer re-entry and queue buildup.
+- **Dynamic whitelist** – use `getAuthorWhitelist` for database-backed access control.
+- **Queue persistence** – provide custom `eventStorage` for durable queues (database, Redis, etc.).
+- **Permission layers** – global whitelist filters at entry; method-level auth controls execution.
 
 # Project structure
 
