@@ -1,89 +1,121 @@
-import { getPublicKey as $, finalizeEvent as v, generateSecretKey as N, verifyEvent as R } from "nostr-tools/pure";
-import { finalizeEvent as te, generateSecretKey as se, getPublicKey as re, verifyEvent as ie } from "nostr-tools/pure";
+import { getPublicKey as $, finalizeEvent as E, generateSecretKey as q, verifyEvent as N } from "nostr-tools/pure";
+import { finalizeEvent as re, generateSecretKey as se, getPublicKey as oe, verifyEvent as ne } from "nostr-tools/pure";
 import * as g from "nostr-tools/nip04";
-import { SimplePool as P, useWebSocketImplementation as D } from "nostr-tools/pool";
-import { SimplePool as ne, useWebSocketImplementation as ae } from "nostr-tools/pool";
-import * as _ from "nostr-tools/nip19";
-import { hexToBytes as H, bytesToHex as k } from "@noble/hashes/utils";
-import { bytesToHex as le, hexToBytes as ue } from "@noble/hashes/utils";
+import { SimplePool as k, useWebSocketImplementation as D } from "nostr-tools/pool";
+import { SimplePool as ae, useWebSocketImplementation as ce } from "nostr-tools/pool";
+import * as T from "nostr-tools/nip19";
+import { hexToBytes as I, bytesToHex as x } from "@noble/hashes/utils";
+import { bytesToHex as he, hexToBytes as de } from "@noble/hashes/utils";
 import { EventEmitter as z } from "events";
-function x(r) {
+function W(r) {
   return typeof r == "string" && r.startsWith("nsec1");
 }
-function W(r) {
+function M(r) {
   return typeof r == "string" && r.startsWith("npub1");
 }
-function I(r) {
-  if (!x(r))
+function H(r) {
+  if (!W(r))
     throw new Error("Invalid nsec key");
-  return _.decode(r).data;
+  return T.decode(r).data;
 }
-function T(r) {
+function S(r) {
   if (r instanceof Uint8Array)
     return r;
   if (Buffer.isBuffer(r))
     return Uint8Array.from(r);
   if (typeof r == "string") {
-    if (x(r))
-      return I(r);
-    if (M(r))
+    if (W(r))
       return H(r);
+    if (B(r))
+      return I(r);
   }
   throw new Error("Unsupported secret key format");
 }
 function C(r) {
-  const e = T(r);
-  return k(e);
-}
-function B(r) {
-  const e = T(r);
-  return _.nsecEncode(e);
+  const e = S(r);
+  return x(e);
 }
 function L(r) {
-  const e = T(r);
-  return $(e);
-}
-function U(r) {
-  if (!W(r))
-    throw new Error("Invalid npub key");
-  return _.decode(r).data.toLowerCase();
+  const e = S(r);
+  return T.nsecEncode(e);
 }
 function J(r) {
-  const e = q(r);
-  return _.npubEncode(e);
+  const e = S(r);
+  return $(e);
 }
-function q(r) {
+function A(r) {
+  if (!M(r))
+    throw new Error("Invalid npub key");
+  return T.decode(r).data.toLowerCase();
+}
+function O(r) {
+  const e = U(r);
+  return T.npubEncode(e);
+}
+function U(r) {
   if (r instanceof Uint8Array)
-    return k(r);
+    return x(r);
   if (Buffer.isBuffer(r))
     return Buffer.from(r).toString("hex");
   if (typeof r == "string") {
-    if (W(r))
-      return U(r);
     if (M(r))
+      return A(r);
+    if (B(r))
       return r.toLowerCase();
   }
   throw new Error("Unsupported public key format");
 }
-function M(r) {
+function B(r) {
   return typeof r == "string" && /^[0-9a-fA-F]{64}$/.test(r);
 }
-const h = {
-  isNsecKey: x,
-  isNpubKey: W,
-  decodeNsecToBytes: I,
-  normalizeSecretKey: T,
+const d = {
+  isNsecKey: W,
+  isNpubKey: M,
+  decodeNsecToBytes: H,
+  normalizeSecretKey: S,
   secretToHex: C,
-  encodeSecretToNsec: B,
-  derivePubkeyFromSecret: L,
-  decodeNpubToHex: U,
-  encodePubkeyToNpub: J,
-  publicToHex: q,
-  isHex64: M
+  encodeSecretToNsec: L,
+  derivePubkeyFromSecret: J,
+  decodeNpubToHex: A,
+  encodePubkeyToNpub: O,
+  publicToHex: U,
+  isHex64: B
 };
-class O {
+class Q {
   constructor(e = {}) {
-    this.relayUrls = e.relays || ["wss://dev-relay.lnfi.network"], this.pool = new P({ enablePing: !0, enableReconnect: !0 }), this.privateKey = e.privateKey ? h.normalizeSecretKey(e.privateKey) : void 0, this.publicKey = e.publicKey ? h.publicToHex(e.publicKey) : void 0, this.serverPublicKey = e.serverPublicKey ? h.publicToHex(e.serverPublicKey) : void 0, this.timeout = e.timeout || 3e4;
+    this.relayUrls = e.relays || ["wss://dev-relay.lnfi.network"], this.pool = new k({ enablePing: !0, enableReconnect: !0 }), this.privateKey = e.privateKey ? d.normalizeSecretKey(e.privateKey) : void 0, this.publicKey = e.publicKey ? d.publicToHex(e.publicKey) : void 0, this.serverPublicKey = e.serverPublicKey ? d.publicToHex(e.serverPublicKey) : void 0, this.additionalTags = Array.isArray(e.tags) ? e.tags : [], this.replyFilterBuilder = this._validateFilterBuilder(e.replyFilter), this.messageReplyFilterBuilder = this._validateFilterBuilder(
+      e.messageReplyFilter || e.replyFilter
+    ), this.incomingFilterBuilder = this._validateFilterBuilder(e.incomingFilter), this.timeout = e.timeout || 3e4;
+  }
+  setTags(e = []) {
+    if (!Array.isArray(e))
+      throw new Error("tags must be an array");
+    this.additionalTags = e;
+  }
+  setReplyFilter(e) {
+    this.replyFilterBuilder = this._validateFilterBuilder(e);
+  }
+  setMessageReplyFilter(e) {
+    this.messageReplyFilterBuilder = this._validateFilterBuilder(e);
+  }
+  setIncomingFilter(e) {
+    this.incomingFilterBuilder = this._validateFilterBuilder(e);
+  }
+  _validateFilterBuilder(e) {
+    if (e == null)
+      return null;
+    if (typeof e != "function")
+      throw new Error("Filter override must be a function accepting (baseFilter, context)");
+    return e;
+  }
+  _buildFilter(e, i, t) {
+    const s = { ...e };
+    if (!i)
+      return s;
+    const o = i({ ...s }, t) || s;
+    if (typeof o != "object" || o === null)
+      throw new Error("Filter builder must return an object");
+    return o;
   }
   /**
    * Initialize connection (SimplePool manages connections automatically)
@@ -94,42 +126,52 @@ class O {
   /**
    * Send RPC request
    */
-  async call(e, s = {}) {
-    return new Promise(async (t, i) => {
-      const o = `${Date.now()}-${Math.random()}`, n = { method: e, params: s, id: o };
-      let a, c, d = !1;
-      const E = () => {
-        c && (clearTimeout(c), c = null), a && (a.close(), a = null);
-      }, y = (l, m) => {
-        d || (d = !0, E(), l ? i(l) : t(m));
+  async call(e, i = {}) {
+    return new Promise(async (t, s) => {
+      const o = `${Date.now()}-${Math.random()}`, l = { method: e, params: i, id: o };
+      let a, n, u = !1;
+      const w = () => {
+        n && (clearTimeout(n), n = null), a && (a.close(), a = null);
+      }, y = (c, m) => {
+        u || (u = !0, w(), c ? s(c) : t(m));
       };
       try {
-        const l = JSON.stringify(n), m = await g.encrypt(
+        const c = JSON.stringify(l), m = await g.encrypt(
           this.privateKey,
           this.serverPublicKey,
-          l
-        ), w = {
+          c
+        ), _ = {
           kind: 4,
           pubkey: this.publicKey,
           created_at: Math.floor(Date.now() / 1e3),
-          tags: [["p", this.serverPublicKey]],
+          tags: [["p", this.serverPublicKey], ...this.additionalTags],
           content: m
-        }, K = v(w, this.privateKey);
-        c = setTimeout(() => {
+        }, b = E(_, this.privateKey);
+        n = setTimeout(() => {
           y(new Error(`Request timeout after ${this.timeout}ms`));
-        }, this.timeout), a = this.pool.subscribe(
+        }, this.timeout);
+        const v = {
+          kinds: [4],
+          "#p": [this.publicKey],
+          authors: [this.serverPublicKey]
+        }, F = this._buildFilter(v, this.replyFilterBuilder, {
+          method: e,
+          params: i,
+          requestId: o
+        });
+        a = this.pool.subscribe(
           this.relayUrls,
-          { kinds: [4], "#p": [this.publicKey], authors: [this.serverPublicKey] },
+          F,
           {
-            onevent: async (b) => {
-              if (d) return;
-              const u = b.tags.find((p) => p[0] === "p");
-              if (!(!u || u[1] !== this.publicKey || b.pubkey !== this.serverPublicKey))
+            onevent: async (K) => {
+              if (u) return;
+              const h = K.tags.find((p) => p[0] === "p");
+              if (!(!h || h[1] !== this.publicKey || K.pubkey !== this.serverPublicKey))
                 try {
                   const p = await g.decrypt(
                     this.privateKey,
                     this.serverPublicKey,
-                    b.content
+                    K.content
                   ), f = JSON.parse(p);
                   f.id === o && (f.error ? y(new Error(f.error)) : y(null, f.result));
                 } catch (p) {
@@ -137,71 +179,82 @@ class O {
                 }
             }
           }
-        ), await Promise.any(this.pool.publish(this.relayUrls, K)), console.log(`Sent ${e}`);
-      } catch (l) {
-        y(l);
+        ), await Promise.any(this.pool.publish(this.relayUrls, b)), console.log(`Sent ${e}`);
+      } catch (c) {
+        y(c);
       }
     });
   }
   /**
    * Send plain text direct message and wait for reply
    */
-  async sendMessage(e, s, t = !1) {
-    const i = h.publicToHex(s);
-    return new Promise(async (o, n) => {
-      let a, c, d = !1;
-      const E = () => {
-        c && (clearTimeout(c), c = null), a && (a.close(), a = null);
-      }, y = (l, m) => {
-        d || (d = !0, E(), l ? n(l) : o(m));
+  async sendMessage(e, i, t = !1) {
+    const s = d.publicToHex(i);
+    return new Promise(async (o, l) => {
+      let a, n, u = !1;
+      const w = () => {
+        n && (clearTimeout(n), n = null), a && (a.close(), a = null);
+      }, y = (c, m) => {
+        u || (u = !0, w(), c ? l(c) : o(m));
       };
       try {
-        const l = await g.encrypt(
+        const c = await g.encrypt(
           this.privateKey,
-          i,
+          s,
           e
         ), m = {
           kind: 4,
           pubkey: this.publicKey,
           created_at: Math.floor(Date.now() / 1e3),
-          tags: [["p", i]],
-          content: l
-        }, w = v(m, this.privateKey), K = w.id, b = m.created_at;
+          tags: [["p", s], ...this.additionalTags],
+          content: c
+        }, _ = E(m, this.privateKey), b = _.id, v = m.created_at;
         if (!t) {
-          await Promise.any(this.pool.publish(this.relayUrls, w)), console.log(`Message sent to ${i.slice(0, 8)}`), y(null, { success: !0, timestamp: b, eventId: K });
+          await Promise.any(this.pool.publish(this.relayUrls, _)), console.log(`Message sent to ${s.slice(0, 8)}`), y(null, { success: !0, timestamp: v, eventId: b });
           return;
         }
-        c = setTimeout(() => {
+        n = setTimeout(() => {
           y(new Error(`Reply timeout after ${this.timeout}ms`));
-        }, this.timeout), a = this.pool.subscribe(
+        }, this.timeout);
+        const F = {
+          kinds: [4],
+          "#p": [this.publicKey],
+          authors: [s],
+          since: v
+        }, K = this._buildFilter(F, this.messageReplyFilterBuilder, {
+          recipientPubkey: s,
+          sentEventId: b,
+          sentTimestamp: v
+        });
+        a = this.pool.subscribe(
           this.relayUrls,
-          { kinds: [4], "#p": [this.publicKey], authors: [i], since: b },
+          K,
           {
-            onevent: async (u) => {
-              if (!d) {
-                console.log(`[Client] Received reply event ${u.id.slice(0, 8)} from ${u.pubkey.slice(0, 8)}`), console.log("[Client] Event tags:", u.tags), console.log("[Client] Event content:", u);
+            onevent: async (h) => {
+              if (!u) {
+                console.log(`[Client] Received reply event ${h.id.slice(0, 8)} from ${h.pubkey.slice(0, 8)}`), console.log("[Client] Event tags:", h.tags), console.log("[Client] Event content:", h);
                 try {
-                  const p = u.tags.find((S) => S[0] === "p"), f = u.tags.find((S) => S[0] === "e");
-                  if (!p || p[1] !== this.publicKey || u.pubkey !== i) {
+                  const p = h.tags.find((P) => P[0] === "p"), f = h.tags.find((P) => P[0] === "e");
+                  if (!p || p[1] !== this.publicKey || h.pubkey !== s) {
                     console.log("[Client] Skipping: p or author mismatch");
                     return;
                   }
-                  if (f && f[1] !== K) {
-                    console.log(`[Client] Skipping: e tag mismatch (expected ${K.slice(0, 8)}, got ${f[1].slice(0, 8)})`);
+                  if (f && f[1] !== b) {
+                    console.log(`[Client] Skipping: e tag mismatch (expected ${b.slice(0, 8)}, got ${f[1].slice(0, 8)})`);
                     return;
                   }
                   f || console.log("[Client] Warning: Reply has no e tag, accepting anyway");
-                  const A = await g.decrypt(
+                  const R = await g.decrypt(
                     this.privateKey,
-                    i,
-                    u.content
+                    s,
+                    h.content
                   );
                   y(null, {
                     success: !0,
-                    reply: A,
-                    sender: i,
-                    timestamp: u.created_at,
-                    eventId: u.id
+                    reply: R,
+                    sender: s,
+                    timestamp: h.created_at,
+                    eventId: h.id
                   });
                 } catch (p) {
                   console.error("Error decrypting reply:", p.message);
@@ -209,39 +262,45 @@ class O {
               }
             }
           }
-        ), await Promise.any(this.pool.publish(this.relayUrls, w)), console.log(`Message sent to ${i.slice(0, 8)}, waiting for reply...`);
-      } catch (l) {
-        console.error("Error sending message:", l.message), y(l);
+        ), await Promise.any(this.pool.publish(this.relayUrls, _)), console.log(`Message sent to ${s.slice(0, 8)}, waiting for reply...`);
+      } catch (c) {
+        console.error("Error sending message:", c.message), y(c);
       }
     });
   }
   /**
    * Listen for plain text direct messages from a specific sender
    */
-  listenForMessages(e, s, t) {
-    const i = h.publicToHex(e);
+  listenForMessages(e, i, t) {
+    const s = d.publicToHex(e), o = {
+      kinds: [4],
+      "#p": [this.publicKey],
+      authors: [s]
+    }, l = this._buildFilter(o, this.incomingFilterBuilder, {
+      senderPubkey: s
+    });
     return this.pool.subscribe(
       this.relayUrls,
-      { kinds: [4], "#p": [this.publicKey], authors: [i] },
+      l,
       {
         onevent: async (n) => {
           try {
-            const a = n.tags.find((d) => d[0] === "p");
-            if (!a || a[1] !== this.publicKey || n.pubkey !== e)
+            const u = n.tags.find((y) => y[0] === "p");
+            if (!u || u[1] !== this.publicKey || n.pubkey !== e)
               return;
-            const c = await g.decrypt(
+            const w = await g.decrypt(
               this.privateKey,
-              i,
+              s,
               n.content
             );
-            s({
-              text: c,
+            i({
+              text: w,
               sender: e,
               timestamp: n.created_at,
               eventId: n.id
             });
-          } catch (a) {
-            console.error("Error decrypting message:", a.message), t && t(a);
+          } catch (u) {
+            console.error("Error decrypting message:", u.message), t && t(u);
           }
         }
       }
@@ -254,27 +313,27 @@ class O {
     this.pool.close(this.relayUrls);
   }
 }
-function Q() {
+function j() {
   const r = [];
   let e = 0;
   return {
-    async enqueue(s) {
+    async enqueue(i) {
       const t = `mem_${Date.now()}_${e++}`;
-      return r.push({ storageId: t, event: s }), t;
+      return r.push({ storageId: t, event: i }), t;
     },
-    async dequeueBatch(s) {
-      return r.splice(0, s);
+    async dequeueBatch(i) {
+      return r.splice(0, i);
     },
-    async ack(s, t) {
+    async ack(i, t) {
     },
     async size() {
       return r.length;
     }
   };
 }
-class F extends z {
+class G extends z {
   constructor(e = {}) {
-    super(), this.relayUrls = e.relays || ["wss://dev-relay.lnfi.network"], this.pool = new P({ enablePing: !0, enableReconnect: !0 }), this.privateKey = e.privateKey ? h.normalizeSecretKey(e.privateKey) : void 0, this.publicKey = e.publicKey ? h.publicToHex(e.publicKey) : void 0, this.processingMode = e.processingMode || "immediate", this.eventStorage = e.eventStorage || Q(), this.processingRate = Math.min(e.processingRate || 3, 3), this.eventTimeout = e.eventTimeout || 3e4, this._authorWhitelist = Array.isArray(e.allowedAuthors) ? e.allowedAuthors.map(h.publicToHex) : [], this._customGetAuthorWhitelist = e.getAuthorWhitelist, this.methodRegistry = /* @__PURE__ */ new Map(), this.isListening = !1, this.subscription = null, this.queueTimer = null, this._isProcessing = !1;
+    super(), this.relayUrls = e.relays || ["wss://dev-relay.lnfi.network"], this.pool = new k({ enablePing: !0, enableReconnect: !0 }), this.privateKey = e.privateKey ? d.normalizeSecretKey(e.privateKey) : void 0, this.publicKey = e.publicKey ? d.publicToHex(e.publicKey) : void 0, this.processingMode = e.processingMode || "immediate", this.eventStorage = e.eventStorage || j(), this.processingRate = Math.min(e.processingRate || 3, 3), this.eventTimeout = e.eventTimeout || 3e4, this._authorWhitelist = Array.isArray(e.allowedAuthors) ? e.allowedAuthors.map(d.publicToHex) : [], this._customGetAuthorWhitelist = e.getAuthorWhitelist, this.methodRegistry = /* @__PURE__ */ new Map(), this.isListening = !1, this.subscription = null, this.queueTimer = null, this._isProcessing = !1;
   }
   /**
    * Register business methods with optional auth configuration
@@ -282,11 +341,11 @@ class F extends z {
    * @param {Function} handler - Handler function
    * @param {Object} authConfig - Optional auth config { authMode, whitelist, authHandler }
    */
-  registerMethod(e, s, t = {}) {
-    if (typeof s != "function")
+  registerMethod(e, i, t = {}) {
+    if (typeof i != "function")
       throw new Error(`Handler for method "${e}" must be a function`);
     this.methodRegistry.set(e, {
-      handler: s,
+      handler: i,
       authConfig: {
         authMode: t.authMode || "public",
         whitelist: t.whitelist || null,
@@ -309,15 +368,15 @@ class F extends z {
    * Add pubkeys to internal whitelist
    */
   addToWhitelist(...e) {
-    const s = e.map(h.publicToHex);
-    this._authorWhitelist.push(...s.filter((t) => !this._authorWhitelist.includes(t)));
+    const i = e.map(d.publicToHex);
+    this._authorWhitelist.push(...i.filter((t) => !this._authorWhitelist.includes(t)));
   }
   /**
    * Remove pubkeys from internal whitelist
    */
   removeFromWhitelist(...e) {
-    const s = e.map(h.publicToHex);
-    this._authorWhitelist = this._authorWhitelist.filter((t) => !s.includes(t));
+    const i = e.map(d.publicToHex);
+    this._authorWhitelist = this._authorWhitelist.filter((t) => !i.includes(t));
   }
   /**
    * Clear internal whitelist
@@ -329,8 +388,8 @@ class F extends z {
    * Check if pubkey is in current whitelist
    */
   async isInWhitelist(e) {
-    const s = await this.getAuthorWhitelist();
-    return !s || s.length === 0 ? !0 : s.includes(h.publicToHex(e));
+    const i = await this.getAuthorWhitelist();
+    return !i || i.length === 0 ? !0 : i.includes(d.publicToHex(e));
   }
   /**
    * Start listening
@@ -352,7 +411,7 @@ class F extends z {
       this.relayUrls,
       e,
       {
-        onevent: (s) => this._handleEvent(s)
+        onevent: (i) => this._handleEvent(i)
       }
     ), this.processingMode === "queued" && this._startQueueProcessor(), console.log(`Subscribed to all relays (mode: ${this.processingMode})`), this.emit("started");
   }
@@ -371,25 +430,25 @@ class F extends z {
     if (!this._isProcessing) {
       this._isProcessing = !0;
       try {
-        const s = Math.max(1, this.processingRate), t = await this.eventStorage.dequeueBatch(s);
+        const i = Math.max(1, this.processingRate), t = await this.eventStorage.dequeueBatch(i);
         if (t.length === 0) return;
-        const i = await Promise.allSettled(
+        const s = await Promise.allSettled(
           t.map((o) => this._processWithTimeout(o))
         );
         for (let o = 0; o < t.length; o++) {
-          const n = t[o], a = i[o];
+          const l = t[o], a = s[o];
           if (a.status === "fulfilled")
-            await this.eventStorage.ack(n.storageId, { status: "success" });
+            await this.eventStorage.ack(l.storageId, { status: "success" });
           else {
-            const c = ((e = a.reason) == null ? void 0 : e.message) || "Unknown error";
-            console.error(`Error processing ${n.storageId}:`, c), await this.eventStorage.ack(n.storageId, {
+            const n = ((e = a.reason) == null ? void 0 : e.message) || "Unknown error";
+            console.error(`Error processing ${l.storageId}:`, n), await this.eventStorage.ack(l.storageId, {
               status: "failed",
-              error: c
+              error: n
             });
           }
         }
-      } catch (s) {
-        console.error("Error in queue processor:", s.message);
+      } catch (i) {
+        console.error("Error in queue processor:", i.message);
       } finally {
         this._isProcessing = !1;
       }
@@ -399,9 +458,9 @@ class F extends z {
    * Process event with timeout wrapper
    */
   async _processWithTimeout(e) {
-    let s;
-    const t = new Promise((i, o) => {
-      s = setTimeout(
+    let i;
+    const t = new Promise((s, o) => {
+      i = setTimeout(
         () => o(new Error("Event processing timeout")),
         this.eventTimeout
       );
@@ -412,25 +471,25 @@ class F extends z {
         t
       ]);
     } finally {
-      s && clearTimeout(s);
+      i && clearTimeout(i);
     }
   }
   /**
    * Process a single stored event from queue
    */
   async _processStoredEvent(e) {
-    const { event: s } = e, t = await this.getAuthorWhitelist();
-    if (t && t.length > 0 && !t.includes(s.pubkey))
+    const { event: i } = e, t = await this.getAuthorWhitelist();
+    if (t && t.length > 0 && !t.includes(i.pubkey))
       throw new Error("sender_not_allowed");
-    await this._processDecryptedEvent(s);
+    await this._processDecryptedEvent(i);
   }
   /**
    * Handle received events (entry point)
    */
   async _handleEvent(e) {
     try {
-      const s = e.tags.find((i) => i[0] === "p");
-      if (!s || s[1] !== this.publicKey)
+      const i = e.tags.find((s) => s[0] === "p");
+      if (!i || i[1] !== this.publicKey)
         return;
       const t = await this.getAuthorWhitelist();
       if (t && t.length > 0 && !t.includes(e.pubkey)) {
@@ -438,18 +497,18 @@ class F extends z {
         return;
       }
       this.processingMode === "immediate" ? await this._processDecryptedEvent(e) : await this._storeEvent(e);
-    } catch (s) {
-      console.error("Error in _handleEvent:", s.message);
+    } catch (i) {
+      console.error("Error in _handleEvent:", i.message);
     }
   }
   /**
    * Store event to queue (queued mode only)
    */
   async _storeEvent(e) {
-    var s;
+    var i;
     try {
       const t = await this.eventStorage.enqueue(e);
-      console.log(`[SDK] Event ${(s = e.id) == null ? void 0 : s.slice(0, 8)} queued as ${t}`);
+      console.log(`[SDK] Event ${(i = e.id) == null ? void 0 : i.slice(0, 8)} queued as ${t}`);
     } catch (t) {
       console.error("Error storing event:", t.message);
     }
@@ -459,10 +518,10 @@ class F extends z {
    */
   async _processDecryptedEvent(e) {
     try {
-      const s = await g.decrypt(this.privateKey, e.pubkey, e.content);
+      const i = await g.decrypt(this.privateKey, e.pubkey, e.content);
       let t;
       try {
-        t = JSON.parse(s);
+        t = JSON.parse(i);
       } catch {
         await this._replyError(e.pubkey, "Invalid JSON format", null);
         return;
@@ -471,16 +530,16 @@ class F extends z {
         await this._replyError(e.pubkey, "Missing method field", null);
         return;
       }
-      const i = this.methodRegistry.get(t.method);
-      if (!i) {
+      const s = this.methodRegistry.get(t.method);
+      if (!s) {
         await this._replyError(e.pubkey, `Method not found: ${t.method}`, t.id);
         return;
       }
-      if (!await this._checkPermission(t.method, e.pubkey, i.authConfig)) {
+      if (!await this._checkPermission(t.method, e.pubkey, s.authConfig)) {
         await this._replyError(e.pubkey, `Permission denied for method: ${t.method}`, t.id);
         return;
       }
-      const n = await i.handler(
+      const l = await s.handler(
         t.params || {},
         e,
         e.id,
@@ -488,33 +547,33 @@ class F extends z {
       );
       await this._reply(e.pubkey, {
         id: t.id,
-        result: n,
+        result: l,
         error: null
       });
-    } catch (s) {
-      console.error("Error processing decrypted event:", s.message);
+    } catch (i) {
+      console.error("Error processing decrypted event:", i.message);
     }
   }
   /**
    * Check method-level permissions
    */
-  async _checkPermission(e, s, t) {
-    const { authMode: i, whitelist: o, authHandler: n } = t;
-    return i === "public" ? !0 : i === "whitelist" ? o && o.length > 0 ? o.includes(s) : await this.isInWhitelist(s) : i === "custom" && n ? await n(s) : !1;
+  async _checkPermission(e, i, t) {
+    const { authMode: s, whitelist: o, authHandler: l } = t;
+    return s === "public" ? !0 : s === "whitelist" ? o && o.length > 0 ? o.includes(i) : await this.isInWhitelist(i) : s === "custom" && l ? await l(i) : !1;
   }
   /**
    * Send direct message reply
    */
-  async _reply(e, s) {
+  async _reply(e, i) {
     try {
-      const t = JSON.stringify(s), i = await g.encrypt(this.privateKey, e, t), o = {
+      const t = JSON.stringify(i), s = await g.encrypt(this.privateKey, e, t), o = {
         kind: 4,
         pubkey: this.publicKey,
         created_at: Math.floor(Date.now() / 1e3),
         tags: [["p", e]],
-        content: i
-      }, n = v(o, this.privateKey);
-      await Promise.any(this.pool.publish(this.relayUrls, n)), console.log(`Replied to ${e.slice(0, 8)}`);
+        content: s
+      }, l = E(o, this.privateKey);
+      await Promise.any(this.pool.publish(this.relayUrls, l)), console.log(`Replied to ${e.slice(0, 8)}`);
     } catch (t) {
       console.error("Error sending reply:", t.message), this.emit("error", t);
     }
@@ -522,11 +581,11 @@ class F extends z {
   /**
    * Send error reply
    */
-  async _replyError(e, s, t) {
+  async _replyError(e, i, t) {
     await this._reply(e, {
       id: t,
       result: null,
-      error: s
+      error: i
     });
   }
   /**
@@ -536,35 +595,35 @@ class F extends z {
     this.isListening = !1, this.queueTimer && (clearInterval(this.queueTimer), this.queueTimer = null), this.subscription && (this.subscription.close(), this.subscription = null), this.pool.close(this.relayUrls), console.log("SDK stopped"), this.emit("stopped");
   }
 }
-const Y = {
-  NostrClient: O,
-  NostrSdk: F,
+const ee = {
+  NostrClient: Q,
+  NostrSdk: G,
   nip04: g,
-  nip19: _,
-  SimplePool: P,
+  nip19: T,
+  SimplePool: k,
   useWebSocketImplementation: D,
-  finalizeEvent: v,
-  verifyEvent: R,
-  generateSecretKey: N,
+  finalizeEvent: E,
+  verifyEvent: N,
+  generateSecretKey: q,
   getPublicKey: $,
-  bytesToHex: k,
-  hexToBytes: H,
-  keyUtils: h
+  bytesToHex: x,
+  hexToBytes: I,
+  keyUtils: d
 };
 export {
-  O as NostrClient,
-  F as NostrSdk,
-  ne as SimplePool,
-  le as bytesToHex,
-  Y as default,
-  te as finalizeEvent,
+  Q as NostrClient,
+  G as NostrSdk,
+  ae as SimplePool,
+  he as bytesToHex,
+  ee as default,
+  re as finalizeEvent,
   se as generateSecretKey,
-  re as getPublicKey,
-  ue as hexToBytes,
-  h as keyUtils,
+  oe as getPublicKey,
+  de as hexToBytes,
+  d as keyUtils,
   g as nip04,
-  _ as nip19,
-  ae as useWebSocketImplementation,
-  ie as verifyEvent
+  T as nip19,
+  ce as useWebSocketImplementation,
+  ne as verifyEvent
 };
 //# sourceMappingURL=index.mjs.map

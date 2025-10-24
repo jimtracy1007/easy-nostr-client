@@ -19,7 +19,54 @@ class NostrClient {
     this.serverPublicKey = options.serverPublicKey
          ? keyUtils.publicToHex(options.serverPublicKey)
          : undefined;
+    this.additionalTags = Array.isArray(options.tags) ? options.tags : [];
+    this.replyFilterBuilder = this._validateFilterBuilder(options.replyFilter);
+    this.messageReplyFilterBuilder = this._validateFilterBuilder(
+      options.messageReplyFilter || options.replyFilter
+    );
+    this.incomingFilterBuilder = this._validateFilterBuilder(options.incomingFilter);
     this.timeout = options.timeout || 30000;
+  }
+
+  setTags(tags = []) {
+    if (!Array.isArray(tags)) {
+      throw new Error('tags must be an array');
+    }
+    this.additionalTags = tags;
+  }
+
+  setReplyFilter(builder) {
+    this.replyFilterBuilder = this._validateFilterBuilder(builder);
+  }
+
+  setMessageReplyFilter(builder) {
+    this.messageReplyFilterBuilder = this._validateFilterBuilder(builder);
+  }
+
+  setIncomingFilter(builder) {
+    this.incomingFilterBuilder = this._validateFilterBuilder(builder);
+  }
+
+  _validateFilterBuilder(builder) {
+    if (builder == null) {
+      return null;
+    }
+    if (typeof builder !== 'function') {
+      throw new Error('Filter override must be a function accepting (baseFilter, context)');
+    }
+    return builder;
+  }
+
+  _buildFilter(baseFilter, builder, context) {
+    const draft = { ...baseFilter };
+    if (!builder) {
+      return draft;
+    }
+    const result = builder({ ...draft }, context) || draft;
+    if (typeof result !== 'object' || result === null) {
+      throw new Error('Filter builder must return an object');
+    }
+    return result;
   }
 
   /**
@@ -76,7 +123,7 @@ class NostrClient {
           kind: 4,
           pubkey: this.publicKey,
           created_at: Math.floor(Date.now() / 1000),
-          tags: [['p', this.serverPublicKey]],
+          tags: [['p', this.serverPublicKey], ...this.additionalTags],
           content: encrypted,
         };
 
@@ -86,9 +133,20 @@ class NostrClient {
           finalize(new Error(`Request timeout after ${this.timeout}ms`));
         }, this.timeout);
 
+        const baseFilter = {
+          kinds: [4],
+          '#p': [this.publicKey],
+          authors: [this.serverPublicKey],
+        };
+        const filter = this._buildFilter(baseFilter, this.replyFilterBuilder, {
+          method,
+          params,
+          requestId,
+        });
+
         subscription = this.pool.subscribe(
           this.relayUrls,
-          { kinds: [4], '#p': [this.publicKey], authors: [this.serverPublicKey] },
+          filter,
           {
             onevent: async (replyEvent) => {
               if (settled) return;
@@ -173,7 +231,7 @@ class NostrClient {
           kind: 4,
           pubkey: this.publicKey,
           created_at: Math.floor(Date.now() / 1000),
-          tags: [['p', recipientPubkeyHex]],
+          tags: [['p', recipientPubkeyHex], ...this.additionalTags],
           content: encrypted,
         };
 
@@ -192,9 +250,21 @@ class NostrClient {
           finalize(new Error(`Reply timeout after ${this.timeout}ms`));
         }, this.timeout);
 
+        const baseFilter = {
+          kinds: [4],
+          '#p': [this.publicKey],
+          authors: [recipientPubkeyHex],
+          since: sentTimestamp,
+        };
+        const filter = this._buildFilter(baseFilter, this.messageReplyFilterBuilder, {
+          recipientPubkey: recipientPubkeyHex,
+          sentEventId,
+          sentTimestamp,
+        });
+
         subscription = this.pool.subscribe(
           this.relayUrls,
-          { kinds: [4], '#p': [this.publicKey], authors: [recipientPubkeyHex], since: sentTimestamp },
+          filter,
           {
             onevent: async (replyEvent) => {
               if (settled) return;
@@ -252,9 +322,18 @@ class NostrClient {
    */
   listenForMessages(senderPubkey, onMessage, onError) {
     const senderPubkeyHex = keyUtils.publicToHex(senderPubkey);
+    const baseFilter = {
+      kinds: [4],
+      '#p': [this.publicKey],
+      authors: [senderPubkeyHex],
+    };
+    const filter = this._buildFilter(baseFilter, this.incomingFilterBuilder, {
+      senderPubkey: senderPubkeyHex,
+    });
+
     const subscription = this.pool.subscribe(
       this.relayUrls,
-      { kinds: [4], '#p': [this.publicKey], authors: [senderPubkeyHex] },
+      filter,
       {
         onevent: async (event) => {
           try {

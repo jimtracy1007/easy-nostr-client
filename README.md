@@ -298,19 +298,30 @@ const client = new NostrClient({
   publicKey: clientPk,
   serverPublicKey: serverPk,
   timeout: 30_000,
+  tags: [['client', 'demo']],
+  replyFilter: (base) => ({ ...base, limit: 50 }),
 });
 
 await client.connect();
 
 try {
+  client.setTags([['session', '123']]);
+  client.setReplyFilter((base, ctx) => ({ ...base, '#e': [ctx.requestId] }));
+
   const sum = await client.call('add', { a: 5, b: 3 });
   console.log(sum); // { sum: 8 }
 
   const greeting = await client.call('greet', { name: 'Alice' });
   console.log(greeting); // { message: 'Hello Alice!' }
+
+  const dm = await client.sendMessage('Hello via DM', serverPk, true);
+  console.log(dm); // { success: true, reply, ... }
 } finally {
   client.close();
 }
+
+// Update filters later if needed
+client.setIncomingFilter((base, ctx) => ({ ...base, since: Math.floor(Date.now() / 1000) - 60 }));
 ```
 
 # Message format
