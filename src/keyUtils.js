@@ -1,5 +1,6 @@
-import { getPublicKey } from 'nostr-tools/pure';
+import { getPublicKey, generateSecretKey } from 'nostr-tools/pure';
 import * as nip19 from 'nostr-tools/nip19';
+import * as nip04 from 'nostr-tools/nip04';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 
 /**
@@ -65,6 +66,14 @@ export function encodeSecretToNsec(secret) {
 }
 
 /**
+ * Generate a new secret key and return as hex string
+ */
+export function generatePrivateKey() {
+  const secret = generateSecretKey();
+  return bytesToHex(secret);
+}
+
+/**
  * Derive hex public key from secret (nsec | hex | Uint8Array)
  */
 export function derivePubkeyFromSecret(secret) {
@@ -123,11 +132,16 @@ const keyUtils = {
   normalizeSecretKey,
   secretToHex,
   encodeSecretToNsec,
+  generatePrivateKey,
   derivePubkeyFromSecret,
   decodeNpubToHex,
   encodePubkeyToNpub,
   publicToHex,
   isHex64,
+  bytesToHex,
+  hexToBytes,
+  nip19,
+  nip04,
 };
 
 export default keyUtils;

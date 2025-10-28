@@ -11,7 +11,6 @@ import {
   generateSecretKey,
   getPublicKey,
 } from 'nostr-tools/pure';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 
 const api = {
   NostrClient,
@@ -24,8 +23,6 @@ const api = {
   verifyEvent,
   generateSecretKey,
   getPublicKey,
-  bytesToHex,
-  hexToBytes,
   keyUtils,
 };
 
@@ -40,8 +37,6 @@ export {
   verifyEvent,
   generateSecretKey,
   getPublicKey,
-  bytesToHex,
-  hexToBytes,
   keyUtils,
 };
 
