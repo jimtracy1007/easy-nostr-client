@@ -332,10 +332,10 @@ nanoid@^3.3.11:
   resolved "https://registry.yarnpkg.com/nanoid/-/nanoid-3.3.11.tgz#4f4f112cefbe303202f2199838128936266d185b"
   integrity sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==
 
-nostr-tools@^2.17.1:
-  version "2.17.1"
-  resolved "https://registry.yarnpkg.com/nostr-tools/-/nostr-tools-2.17.1.tgz#6c4ee06d5603c3fccf0fb4337ccc0ecc8cf54863"
-  integrity sha512-nr4opZGsZBpo4QZBaCufJoYzo8jzgDr87QPSe6ntU7+5dqoUGfi+8qYvQhDc0Ux9SsRym7X5hZv/zJuoNtIP6g==
+nostr-tools@^2.17.2:
+  version "2.17.2"
+  resolved "https://registry.yarnpkg.com/nostr-tools/-/nostr-tools-2.17.2.tgz#b038d85fbfe110fb1afbf784b8bd1e4ef13f1712"
+  integrity sha512-B/6rxJ4hyrwEdxsGYUiw2E/+/ZcKuFzQcrSYDHJpYAV0xae344UU2QdL6VHPlbHsBhMufUDU4+h2emZLpIlwLA==
   dependencies:
     "@noble/ciphers" "^0.5.1"
     "@noble/curves" "1.2.0"

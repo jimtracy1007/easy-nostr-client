@@ -417,7 +417,16 @@ class NostrSdk extends EventEmitter {
       const signed = finalizeEvent(event, this.privateKey);
 
       // Use SimplePool to publish to all relays
-      await Promise.any(this.pool.publish(this.relayUrls, signed));
+      try {
+        await Promise.any(this.pool.publish(this.relayUrls, signed));
+      } catch (err) {
+        console.warn(
+          `[NostrSdk] Publish failed on all relays when replying to ${recipientPubkey.slice(0, 8)}:`,
+          err instanceof AggregateError && Array.isArray(err.errors)
+            ? err.errors.map(e => e && e.message)
+            : err && err.message
+        );
+      }
 
       console.log(`Replied to ${recipientPubkey.slice(0, 8)}`);
     } catch (error) {

@@ -129,14 +129,36 @@ class NostrClient {
 
         const signed = finalizeEvent(event, this.privateKey);
 
-        timeoutId = setTimeout(() => {
-          finalize(new Error(`Request timeout after ${this.timeout}ms`));
-        }, this.timeout);
+        // Publish first (like old version)
+        const publishPromises = this.pool.publish(this.relayUrls, signed);
+        Promise.any(publishPromises).catch(err => {
+          const relayErrors =
+            err instanceof AggregateError && Array.isArray(err.errors)
+              ? err.errors.filter(Boolean)
+              : err
+                ? [err]
+                : [];
+          const onlyAckTimeouts =
+            Array.isArray(relayErrors) && relayErrors.length > 0 && relayErrors.every(e => e.message === 'publish timed out');
 
+          if (!onlyAckTimeouts) {
+            console.warn(
+              `[NostrClient] Publish failed on all relays for method ${method}:`,
+              Array.isArray(relayErrors)
+                ? relayErrors.map(e => e.message)
+                : relayErrors
+            );
+          }
+        });
+
+        console.log(`Sent ${method}`);
+
+        // Then subscribe to wait for reply (with since filter)
         const baseFilter = {
           kinds: [4],
           '#p': [this.publicKey],
           authors: [this.serverPublicKey],
+          since: event.created_at - 5,
         };
         const filter = this._buildFilter(baseFilter, this.replyFilterBuilder, {
           method,
@@ -178,9 +200,9 @@ class NostrClient {
           }
         );
 
-        await Promise.any(this.pool.publish(this.relayUrls, signed));
-
-        console.log(`Sent ${method}`);
+        timeoutId = setTimeout(() => {
+          finalize(new Error(`Request timeout after ${this.timeout}ms`));
+        }, this.timeout);
       } catch (error) {
         finalize(error);
       }
